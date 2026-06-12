@@ -1,0 +1,75 @@
+/**
+ * Drizzle ORM 数据库连接
+ * 延迟初始化以支持构建时无需数据库配置
+ */
+
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from './schema';
+import { loadEnv } from '../supabase-client';
+
+// 加载环境变量
+loadEnv();
+
+// 获取数据库连接 URL
+function getDatabaseUrl(): string | null {
+  // 优先使用 PGDATABASE_URL（正确的数据库连接字符串）
+  if (process.env.PGDATABASE_URL) {
+    return process.env.PGDATABASE_URL;
+  }
+
+  // 其次使用 COZE_SUPABASE_DB_URL
+  if (process.env.COZE_SUPABASE_DB_URL) {
+    return process.env.COZE_SUPABASE_DB_URL;
+  }
+
+  // 最后使用 DATABASE_URL
+  if (process.env.DATABASE_URL) {
+    return process.env.DATABASE_URL;
+  }
+
+  // 构建时可能没有数据库配置，返回 null
+  return null;
+}
+
+// 延迟初始化的数据库实例
+let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
+
+// 获取数据库实例（延迟初始化）
+function getDb() {
+  if (!_db) {
+    const connectionString = getDatabaseUrl();
+    
+    if (!connectionString) {
+      throw new Error('未找到数据库连接配置，请设置 PGDATABASE_URL 或 DATABASE_URL 环境变量');
+    }
+
+    console.log('[数据库连接] 使用连接字符串:', connectionString.replace(/:[^:@]+@/, ':***@'));
+
+    // 创建 postgres-js 客户端
+    _client = postgres(connectionString, {
+      max: 10,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      // SSL 配置：云数据库通常需要 SSL
+      ssl: connectionString.includes('supabase.co') || 
+           connectionString.includes('sslmode') ? 
+           { rejectUnauthorized: false } : false,
+    });
+
+    _db = drizzle(_client, { schema });
+  }
+  
+  return _db;
+}
+
+// 导出 db 作为 getter，支持延迟初始化
+export const db = new Proxy({} as ReturnType<typeof drizzle>, {
+  get(_, prop) {
+    return Reflect.get(getDb(), prop);
+  },
+});
+
+// 导出 schema
+export * from './schema';

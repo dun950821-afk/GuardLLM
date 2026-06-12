@@ -1,0 +1,235 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/lib/db';
+
+// 获取策略的关键词列表
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: policyId } = await params;
+    const { searchParams } = new URL(request.url);
+    const categoryId = searchParams.get('categoryId');
+    const dimension = searchParams.get('dimension');
+    const search = searchParams.get('search');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
+
+    const client = getDb();
+
+    let query = client
+      .from('keyword_rules')
+      .select('*, category:keyword_categories(id, name)', { count: 'exact' })
+      .eq('policy_id', policyId);
+
+    if (categoryId) {
+      query = query.eq('category_id', categoryId);
+    }
+    if (dimension) {
+      query = query.eq('dimension', dimension);
+    }
+    if (search) {
+      query = query.ilike('keyword', `%${search}%`);
+    }
+
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        items: data || [],
+        total: count || 0,
+        page,
+        pageSize,
+        totalPages: Math.ceil((count || 0) / pageSize),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching keywords:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to fetch keywords' },
+      { status: 500 }
+    );
+  }
+}
+
+// 添加关键词
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: policyId } = await params;
+    const body = await request.json();
+    const { keyword, dimension, categoryId, score, matchType, caseSensitive, description, tags } = body;
+
+    if (!keyword || !dimension) {
+      return NextResponse.json(
+        { success: false, error: '关键词和维度不能为空' },
+        { status: 400 }
+      );
+    }
+
+    const client = getDb();
+
+    // 检查关键词是否已存在
+    const { data: existing } = await client
+      .from('keyword_rules')
+      .select('id')
+      .eq('policy_id', policyId)
+      .eq('keyword', keyword)
+      .single();
+
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: '关键词已存在' },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await client
+      .from('keyword_rules')
+      .insert({
+        policy_id: policyId,
+        category_id: categoryId || null,
+        dimension,
+        keyword,
+        score: score || 90,
+        match_type: matchType || 'exact',
+        case_sensitive: caseSensitive || false,
+        enabled: true,
+        description: description || '',
+        tags: tags || [],
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error creating keyword:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to create keyword' },
+      { status: 500 }
+    );
+  }
+}
+
+// 更新关键词
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: policyId } = await params;
+    const body = await request.json();
+    const { keywordId, keyword, dimension, categoryId, score, matchType, caseSensitive, enabled, description, tags } = body;
+
+    if (!keywordId) {
+      return NextResponse.json(
+        { success: false, error: '关键词ID不能为空' },
+        { status: 400 }
+      );
+    }
+
+    const client = getDb();
+
+    const updateData: Record<string, unknown> = {};
+    if (keyword !== undefined) updateData.keyword = keyword;
+    if (dimension !== undefined) updateData.dimension = dimension;
+    if (categoryId !== undefined) updateData.category_id = categoryId;
+    if (score !== undefined) updateData.score = score;
+    if (matchType !== undefined) updateData.match_type = matchType;
+    if (caseSensitive !== undefined) updateData.case_sensitive = caseSensitive;
+    if (enabled !== undefined) updateData.enabled = enabled;
+    if (description !== undefined) updateData.description = description;
+    if (tags !== undefined) updateData.tags = tags;
+
+    const { error } = await client
+      .from('keyword_rules')
+      .update(updateData)
+      .eq('id', keywordId)
+      .eq('policy_id', policyId);
+
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: '关键词更新成功',
+    });
+  } catch (error) {
+    console.error('Error updating keyword:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to update keyword' },
+      { status: 500 }
+    );
+  }
+}
+
+// 删除关键词
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: policyId } = await params;
+    const { searchParams } = new URL(request.url);
+    const keywordId = searchParams.get('keywordId');
+
+    if (!keywordId) {
+      return NextResponse.json(
+        { success: false, error: '关键词ID不能为空' },
+        { status: 400 }
+      );
+    }
+
+    const client = getDb();
+
+    const { error } = await client
+      .from('keyword_rules')
+      .delete()
+      .eq('id', keywordId)
+      .eq('policy_id', policyId);
+
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: '关键词删除成功',
+    });
+  } catch (error) {
+    console.error('Error deleting keyword:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to delete keyword' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,0 +1,251 @@
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { detectionSessions, detectionRecords, riskFindings } from '@/lib/db';
+import { sql, eq, desc, inArray, and, gte, lte } from 'drizzle-orm';
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const action = searchParams.get('action');
+    const search = searchParams.get('search');
+    const dimension = searchParams.get('dimension');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    const offset = (page - 1) * limit;
+
+    // 构建查询条件
+    const conditions = [];
+    if (startDate) {
+      conditions.push(gte(detectionSessions.createdAt, new Date(startDate)));
+    }
+    if (endDate) {
+      // 设置结束日期为当天的最后一秒
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(detectionSessions.createdAt, end));
+    }
+
+    // 查询总数
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(detectionSessions)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    const total = Number(countResult[0]?.count || 0);
+
+    // 查询会话数据
+    let sessions = await db
+      .select()
+      .from(detectionSessions)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(detectionSessions.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // 按动作过滤
+    if (action && action !== 'all') {
+      sessions = sessions.filter(s => s.finalAction === action);
+    }
+
+    // 搜索过滤
+    if (search) {
+      sessions = sessions.filter(s => 
+        s.userPrompt?.toLowerCase().includes(search.toLowerCase()) ||
+        s.finalResponse?.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+
+    // 获取所有会话ID
+    const sessionIds = sessions.map(s => s.id);
+    
+    // 查询关联的检测记录
+    let records: typeof detectionRecords.$inferSelect[] = [];
+    if (sessionIds.length > 0) {
+      records = await db
+        .select()
+        .from(detectionRecords)
+        .where(inArray(detectionRecords.sessionId, sessionIds));
+    }
+
+    // 获取所有记录ID
+    const recordIds = records.map(r => r.id);
+    
+    // 查询关联的风险发现
+    let findings: typeof riskFindings.$inferSelect[] = [];
+    if (recordIds.length > 0) {
+      findings = await db
+        .select()
+        .from(riskFindings)
+        .where(inArray(riskFindings.recordId, recordIds));
+    }
+
+    // 如果指定了维度筛选，过滤会话
+    let filteredSessionIds = sessionIds;
+    if (dimension && dimension !== 'all') {
+      const recordIdsWithDimension = new Set(
+        findings.filter(f => f.dimension === dimension).map(f => f.recordId)
+      );
+      const sessionIdsWithDimension = new Set(
+        records.filter(r => recordIdsWithDimension.has(r.id)).map(r => r.sessionId)
+      );
+      filteredSessionIds = sessionIds.filter(id => sessionIdsWithDimension.has(id));
+      sessions = sessions.filter(s => sessionIdsWithDimension.has(s.id));
+    }
+
+    // 构建记录ID到findings的映射
+    const findingsByRecordId = new Map<string, typeof riskFindings.$inferSelect[]>();
+    for (const finding of findings) {
+      const existing = findingsByRecordId.get(finding.recordId) || [];
+      existing.push(finding);
+      findingsByRecordId.set(finding.recordId, existing);
+    }
+
+    // 构建会话ID到记录的映射
+    const recordsBySessionId = new Map<string, typeof detectionRecords.$inferSelect[]>();
+    for (const record of records) {
+      const existing = recordsBySessionId.get(record.sessionId) || [];
+      existing.push(record);
+      recordsBySessionId.set(record.sessionId, existing);
+    }
+
+    // 组装最终数据
+    const resultSessions = sessions.map(session => {
+      const sessionRecords = recordsBySessionId.get(session.id) || [];
+      const inputRecord = sessionRecords.find(r => r.direction === 'input');
+      const outputRecord = sessionRecords.find(r => r.direction === 'output');
+      
+      // 合并输入和输出的findings
+      const inputFindings = inputRecord ? (findingsByRecordId.get(inputRecord.id) || []) : [];
+      const outputFindings = outputRecord ? (findingsByRecordId.get(outputRecord.id) || []) : [];
+      
+      const allFindings = [...inputFindings, ...outputFindings].map(f => ({
+        dimension: f.dimension,
+        dimensionName: getDimensionName(f.dimension),
+        score: f.score ? Number(f.score) : null,
+        severity: f.severity,
+        matchedRules: f.matchedRules as string[] || [],
+        evidence: f.evidence as string[] || [],
+        reason: f.reason,
+      }));
+
+      return {
+        id: session.id,
+        inputText: session.userPrompt,
+        outputText: session.mockModelOutput || session.finalResponse,
+        inputScore: session.inputScore ? Number(session.inputScore) : null,
+        outputScore: session.outputScore ? Number(session.outputScore) : null,
+        action: session.finalAction,
+        inputAction: session.inputAction,
+        outputAction: session.outputAction,
+        policyId: session.policyId,
+        policyName: '默认策略',
+        direction: 'input' as const,
+        providerId: session.targetProviderId,
+        providerName: '模型',
+        modelUsed: '模型',
+        latencyMs: session.durationMs,
+        findings: allFindings,
+        hasRisk: allFindings.length > 0,
+        riskLevel: allFindings.some(f => f.severity === 'high') ? 'high' 
+                  : allFindings.some(f => f.severity === 'medium') ? 'medium' 
+                  : allFindings.length > 0 ? 'low' : 'none',
+        createdAt: session.createdAt?.toISOString(),
+        // 白名单命中信息
+        whitelistMatched: session.whitelistMatched ? (typeof session.whitelistMatched === 'string' ? JSON.parse(session.whitelistMatched) : session.whitelistMatched) : null,
+        skippedDimensions: session.skippedDimensions ? (typeof session.skippedDimensions === 'string' ? JSON.parse(session.skippedDimensions) : session.skippedDimensions) : [],
+      };
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        sessions: resultSessions,
+        pagination: {
+          page,
+          limit,
+          total: total.toString(),
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('获取历史记录失败:', error);
+    return NextResponse.json(
+      { success: false, error: '获取历史记录失败' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: '缺少会话ID' },
+        { status: 400 }
+      );
+    }
+
+    // 获取关联的检测记录
+    const records = await db
+      .select()
+      .from(detectionRecords)
+      .where(eq(detectionRecords.sessionId, id));
+
+    const recordIds = records.map(r => r.id);
+
+    // 删除关联的风险发现
+    if (recordIds.length > 0) {
+      await db
+        .delete(riskFindings)
+        .where(inArray(riskFindings.recordId, recordIds));
+    }
+
+    // 删除关联的检测记录
+    await db
+      .delete(detectionRecords)
+      .where(eq(detectionRecords.sessionId, id));
+
+    // 删除会话
+    await db
+      .delete(detectionSessions)
+      .where(eq(detectionSessions.id, id));
+
+    return NextResponse.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    console.error('删除会话失败:', error);
+    return NextResponse.json(
+      { success: false, error: '删除失败' },
+      { status: 500 }
+    );
+  }
+}
+
+// 维度名称映射
+function getDimensionName(code: string): string {
+  const names: Record<string, string> = {
+    prompt_injection: '提示词注入',
+    pii_leak: 'PII泄露',
+    credential_secret_leak: '凭证泄露',
+    malicious_code: '恶意代码',
+    violence_hate: '暴力仇恨',
+    illegal_content: '非法内容',
+    spam_detection: '垃圾信息',
+    ad_detection: '广告检测',
+    sensitive_compliance: '敏感合规',
+    adult_content: '成人内容',
+    self_harm: '自残',
+    fraud_scam: '欺诈诈骗',
+    misinformation: '虚假信息',
+    copyright_risk: '版权风险',
+    business_sensitive: '商业敏感',
+    output_leak: '输出泄露',
+  };
+  return names[code] || code;
+}
