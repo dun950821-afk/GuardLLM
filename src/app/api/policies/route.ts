@@ -46,7 +46,7 @@ export async function GET() {
 
     // 为每个策略获取规则和统计信息
     const policiesWithDetails = await Promise.all(
-      (profiles || []).map(async (profile) => {
+      (profiles || []).map(async (profile: Record<string, unknown>) => {
         const [rulesResult, keywordsResult, categoriesResult] = await Promise.all([
           client.from('policy_rules').select('*').eq('policy_id', profile.id),
           client.from('keyword_rules').select('id', { count: 'exact', head: true }).eq('policy_id', profile.id),
@@ -136,12 +136,19 @@ export async function POST(request: NextRequest) {
         is_active: true,
         version: 1,
       })
-      .select()
-      .single();
+      .select('*')
+      .single() as { data: { id: string; [key: string]: unknown } | null; error: unknown };
 
     if (profileError) {
       return NextResponse.json(
-        { success: false, error: profileError.message || 'Failed to create policy' },
+        { success: false, error: (profileError as Error).message || 'Failed to create policy' },
+        { status: 500 }
+      );
+    }
+
+    if (!profile) {
+      return NextResponse.json(
+        { success: false, error: 'Failed to create policy' },
         { status: 500 }
       );
     }
@@ -201,11 +208,11 @@ export async function POST(request: NextRequest) {
             priority: cat.priority,
             enabled: cat.enabled,
           })
-          .select()
-          .single();
+          .select('*')
+          .single() as { data: Record<string, unknown> | null; error: unknown };
 
         if (newCat) {
-          categoryIdMap[cat.id] = newCat.id;
+          categoryIdMap[cat.id as string] = newCat.id as string;
         }
       }
 

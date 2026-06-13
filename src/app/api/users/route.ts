@@ -135,8 +135,8 @@ export async function POST(request: NextRequest) {
         department,
         description,
       })
-      .select()
-      .single();
+      .select('*')
+      .single() as { data: Record<string, unknown> | null; error: unknown };
 
     if (error) {
       console.error('创建用户失败:', error);
@@ -144,6 +144,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 返回用户信息（不包含密码）
+    if (!data) {
+      return NextResponse.json({ success: false, error: '创建用户失败' }, { status: 500 });
+    }
     const { password: _, ...userWithoutPassword } = data;
 
     return NextResponse.json({
@@ -209,8 +212,8 @@ export async function PUT(request: NextRequest) {
       .from('users')
       .update(updateData)
       .eq('id', id)
-      .select()
-      .single();
+      .select('*')
+      .single() as { data: Record<string, unknown> | null; error: unknown };
 
     if (error) {
       console.error('更新用户失败:', error);
@@ -218,7 +221,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // 返回用户信息（不包含密码）
-    const { password: _, ...userWithoutPassword } = data;
+    const { password: _, ...userWithoutPassword } = data as Record<string, unknown>;
 
     return NextResponse.json({
       success: true,

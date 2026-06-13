@@ -110,12 +110,12 @@ export async function POST(
         description: description || '',
         tags: tags || [],
       })
-      .select()
-      .single();
+      .select('*')
+      .single() as { data: Record<string, unknown> | null; error: unknown };
 
     if (error) {
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: (error as Error).message },
         { status: 500 }
       );
     }

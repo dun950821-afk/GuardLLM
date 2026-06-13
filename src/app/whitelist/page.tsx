@@ -68,6 +68,7 @@ interface Policy {
   id: string;
   name: string;
   is_default?: boolean;
+  is_active?: boolean;
 }
 
 // 测试结果类型
@@ -169,11 +170,11 @@ export default function WhitelistPage() {
       }
       if (policiesResult.success && policiesResult.data?.length > 0) {
         // 只显示启用的策略
-        const activePolicies = policiesResult.data.filter((p: Policy) => p.isActive);
+        const activePolicies = policiesResult.data.filter((p: Policy) => p.is_active);
         setPolicies(activePolicies);
         // 设置默认测试策略
         if (activePolicies.length > 0) {
-          const defaultPolicy = activePolicies.find((p: Policy) => p.isDefault) || activePolicies[0];
+          const defaultPolicy = activePolicies.find((p: Policy) => p.is_default) || activePolicies[0];
           setTestFormData(prev => ({ ...prev, policyId: defaultPolicy.id }));
         }
       }

@@ -376,7 +376,7 @@ class QueryBuilder {
         throw new Error('No data provided for insert');
       }
       // 转换 snake_case 字段名到 camelCase（匹配 Drizzle schema）
-      const convertedData = this.insertData.map(item => {
+      const convertedData = this.insertData.map((item: Record<string, unknown>) => {
         const converted: Record<string, any> = {};
         for (const [key, value] of Object.entries(item)) {
           const camelKey = snakeToCamel(key);

@@ -47,7 +47,7 @@ interface JudgeModelResult {
   used: boolean;
   score?: number;
   confidence?: number;
-  suggestedAction?: string;
+  suggestedAction?: 'allow' | 'warn' | 'block';
   reason?: string;
   latencyMs?: number;
   error?: string;
@@ -56,12 +56,12 @@ interface JudgeModelResult {
 // 决策追踪
 interface DecisionTrace {
   ruleScore: number;
-  ruleAction: string;
+  ruleAction: 'allow' | 'warn' | 'block';
   judgeScore?: number;
-  judgeAction?: string;
+  judgeAction?: 'allow' | 'warn' | 'block';
   decisionMode: string;
   finalScore: number;
-  finalAction: string;
+  finalAction: 'allow' | 'warn' | 'block';
   reasoning: string;
 }
 

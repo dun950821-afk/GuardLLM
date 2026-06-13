@@ -77,7 +77,7 @@ export async function POST(
 
     if (rules && rules.length > 0) {
       await client.from('policy_rules').insert(
-        rules.map((rule) => ({
+        rules.map((rule: Record<string, unknown>) => ({
           policy_id: newPolicy.id,
           dimension: rule.dimension,
           enabled: rule.enabled,
@@ -109,11 +109,11 @@ export async function POST(
             priority: cat.priority,
             enabled: cat.enabled,
           })
-          .select()
-          .single();
+          .select('*')
+          .single() as { data: Record<string, unknown> | null; error: unknown };
 
         if (newCat) {
-          categoryIdMap[cat.id] = newCat.id;
+          categoryIdMap[cat.id as string] = newCat.id as string;
         }
       }
     }
@@ -125,9 +125,9 @@ export async function POST(
 
     if (keywords && keywords.length > 0) {
       await client.from('keyword_rules').insert(
-        keywords.map((kw) => ({
+        keywords.map((kw: Record<string, unknown>) => ({
           policy_id: newPolicy.id,
-          category_id: kw.category_id ? categoryIdMap[kw.category_id] : null,
+          category_id: kw.category_id ? categoryIdMap[kw.category_id as string] : null,
           dimension: kw.dimension,
           keyword: kw.keyword,
           score: kw.score,

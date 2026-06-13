@@ -53,6 +53,7 @@ interface Policy {
   id: string;
   name: string;
   isDefault: boolean;
+  isActive: boolean;
 }
 
 interface EvaluationResult {

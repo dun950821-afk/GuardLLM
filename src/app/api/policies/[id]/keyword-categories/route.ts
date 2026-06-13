@@ -25,7 +25,7 @@ export async function GET(
 
     // 获取每个分类的关键词数量
     const categoriesWithCount = await Promise.all(
-      (data || []).map(async (cat) => {
+      (data || []).map(async (cat: Record<string, unknown>) => {
         const { count } = await client
           .from('keyword_rules')
           .select('id', { count: 'exact', head: true })
@@ -80,12 +80,12 @@ export async function POST(
         priority: priority || 100,
         enabled: true,
       })
-      .select()
-      .single();
+      .select('*')
+      .single() as { data: Record<string, unknown> | null; error: unknown };
 
     if (error) {
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: (error as Error).message },
         { status: 500 }
       );
     }

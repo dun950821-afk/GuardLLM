@@ -29,6 +29,7 @@ interface Policy {
   name: string;
   description?: string;
   isDefault?: boolean;
+  isActive?: boolean;
 }
 
 interface Provider {

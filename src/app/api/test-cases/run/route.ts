@@ -97,14 +97,14 @@ export async function POST(request: NextRequest) {
       .from('evaluation_runs')
       .insert({
         policy_id: policy.id,
-        test_case_ids: testCases.map(tc => tc.id),
+        test_case_ids: testCases.map((tc: Record<string, unknown>) => tc.id as string),
         total_cases: testCases.length,
         status: 'running',
       })
-      .select()
-      .single();
+      .select('*')
+      .single() as { data: { id: string; [key: string]: unknown } | null; error: unknown };
 
-    if (runError) {
+    if (runError || !evaluationRun) {
       return NextResponse.json(
         { success: false, error: '创建评估任务失败' },
         { status: 500 }

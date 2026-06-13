@@ -35,7 +35,7 @@ export async function POST(
       .eq('policy_id', policyId)
       .in('keyword', keywordValues);
 
-    const existingSet = new Set((existing || []).map((k) => k.keyword));
+    const existingSet = new Set((existing || []).map((k: Record<string, unknown>) => k.keyword as string));
 
     // 过滤掉已存在的
     const toInsert = keywords

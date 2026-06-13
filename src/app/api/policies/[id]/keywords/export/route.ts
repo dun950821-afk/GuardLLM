@@ -29,7 +29,7 @@ export async function GET(
     if (format === 'csv') {
       const header = 'keyword,dimension,score,match_type,case_sensitive,description\n';
       const rows = (data || [])
-        .map((k) => 
+        .map((k: Record<string, unknown>) => 
           `"${k.keyword}","${k.dimension}",${k.score},"${k.match_type}",${k.case_sensitive},"${k.description || ''}"`
         )
         .join('\n');
@@ -91,7 +91,7 @@ export async function POST(
         .select('keyword')
         .eq('policy_id', policyId)
         .in('keyword', keywordValues);
-      existingSet = new Set((existing || []).map((k) => k.keyword));
+      existingSet = new Set((existing || []).map((k: Record<string, unknown>) => k.keyword as string));
     }
 
     // 插入新关键词

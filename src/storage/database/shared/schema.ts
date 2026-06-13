@@ -166,7 +166,7 @@ export const policyProfiles = pgTable(
 		// 策略升级配置
 		escalationEnabled: boolean("escalation_enabled").default(false).notNull(),
 		escalationThreshold: integer("escalation_threshold").default(5).notNull(), // 连续警告次数阈值
-		escalationTargetPolicyId: varchar("escalation_target_policy_id", { length: 36 }).references(() => policyProfiles.id), // 升级到的目标策略ID
+		escalationTargetPolicyId: varchar("escalation_target_policy_id", { length: 36 }), // 升级到的目标策略ID，手动管理外键
 		deescalationThreshold: integer("deescalation_threshold").default(1).notNull(), // 降级需要连续allow次数
 		escalationCooldownMinutes: integer("escalation_cooldown_minutes").default(30).notNull(), // 升级后冷却期（分钟）
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
