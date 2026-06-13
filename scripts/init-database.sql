@@ -111,11 +111,19 @@ CREATE TABLE policy_profiles (
   name VARCHAR(200) NOT NULL,
   description TEXT,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
-  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   version INTEGER NOT NULL DEFAULT 1,
-  config JSONB DEFAULT '{}',
+  tags JSONB DEFAULT '[]',
+  metadata JSONB DEFAULT '{}',
+  -- 策略升级配置
+  escalation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  escalation_threshold INTEGER NOT NULL DEFAULT 5,
+  escalation_target_policy_id VARCHAR(36),
+  deescalation_threshold INTEGER NOT NULL DEFAULT 1,
+  escalation_cooldown_minutes INTEGER NOT NULL DEFAULT 30,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by VARCHAR(100) DEFAULT 'system'
 );
 
 -- 插入策略配置数据
